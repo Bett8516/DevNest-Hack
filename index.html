@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Campus Compass — Find Your Way Around School</title>
+<meta name="description" content="An interactive map of the school campus built from the school's own aerial survey. Find buildings, get walking directions, and never get lost.">
+<link rel="stylesheet" href="vendor/leaflet.css">
+<style>
+  :root{
+    --ink:#0d1f1a;
+    --ink-2:#33473f;
+    --muted:#6b7f77;
+    --line:#dfe6e2;
+    --paper:#ffffff;
+    --shell:#0f2a22;
+    --shell-2:#16382d;
+    --accent:#e8a33d;
+    --accent-ink:#3d2606;
+    --green:#1f7a5c;
+    --radius:14px;
+    --shadow:0 10px 30px rgba(9,32,25,.16);
+    --shadow-sm:0 2px 8px rgba(9,32,25,.10);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    color:var(--ink);
+    background:var(--shell);
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+  }
+  button{font-family:inherit}
+
+  /* ---------- shell ---------- */
+  .app{display:flex;flex-direction:column;height:100dvh;height:100vh}
+
+  header.topbar{
+    display:flex;align-items:center;gap:14px;
+    padding:10px 16px;
+    background:var(--shell);
+    color:#eaf3ef;
+    border-bottom:1px solid rgba(255,255,255,.08);
+    flex:0 0 auto;
+    z-index:1200;
+  }
+  .brand{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+  .brand-mark{
+    width:34px;height:34px;border-radius:10px;
+    background:var(--accent);
+    display:grid;place-items:center;
+    color:var(--accent-ink);
+    flex:0 0 auto;
+  }
+  .brand-mark svg{width:20px;height:20px;display:block}
+  .brand-text{line-height:1.1}
+  .brand-text b{display:block;font-size:15px;letter-spacing:.2px}
+  .brand-text span{display:block;font-size:11px;color:#9db8ae;letter-spacing:.4px;text-transform:uppercase}
+
+  .searchwrap{position:relative;flex:1 1 auto;max-width:520px;min-width:0}
+  .searchwrap svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:#7d968c;pointer-events:none}
+  #search{
+    width:100%;padding:10px 12px 10px 36px;
+    border-radius:10px;border:1px solid rgba(255,255,255,.14);
+    background:rgba(255,255,255,.07);
+    color:#f2f8f5;font-size:14px;outline:none;
+  }
+  #search::placeholder{color:#8fa9a0}
+  #search:focus{border-color:var(--accent);background:rgba(255,255,255,.11)}
+
+  .top-actions{display:flex;gap:8px;flex:0 0 auto;margin-left:auto}
+  .btn{
+    display:inline-flex;align-items:center;gap:7px;
+    border:1px solid rgba(255,255,255,.16);
+    background:rgba(255,255,255,.06);
+    color:#eaf3ef;
+    padding:9px 13px;border-radius:10px;
+    font-size:13px;font-weight:600;cursor:pointer;
+    transition:background .15s,border-color .15s,transform .1s;
+    white-space:nowrap;
+  }
+  .btn:hover{background:rgba(255,255,255,.13)}
+  .btn:active{transform:translateY(1px)}
+  .btn svg{width:15px;height:15px}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+  .btn.primary:hover{background:#f0b155}
+  .btn.ghost{background:transparent}
+
+  /* ---------- body ---------- */
+  .body{display:flex;flex:1 1 auto;min-height:0;position:relative}
+
+  aside.sidebar{
+    width:330px;flex:0 0 330px;
+    background:var(--paper);
+    border-right:1px solid var(--line);
+    display:flex;flex-direction:column;
+    min-height:0;
+    z-index:900;
+  }
+  .notice{
+    display:flex;gap:9px;align-items:flex-start;
+    padding:11px 14px;
+    background:#fdf6e7;
+    border-bottom:1px solid #f0e2c4;
+    font-size:11.5px;line-height:1.45;color:#6b4f16;
+  }
+  .notice svg{width:14px;height:14px;flex:0 0 auto;margin-top:1px;color:#b07d1a}
+  .notice b{font-weight:700}
+
+  .filters{padding:12px 14px 10px;border-bottom:1px solid var(--line);flex:0 0 auto}
+  .filters-label{font-size:10.5px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{
+    border:1px solid var(--line);background:#fff;color:var(--ink-2);
+    padding:5px 10px;border-radius:999px;font-size:11.5px;font-weight:600;
+    cursor:pointer;transition:all .13s;display:inline-flex;align-items:center;gap:5px;
+  }
+  .chip:hover{border-color:#b9c9c2;background:#f6faf8}
+  .chip .dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+  .chip[aria-pressed="true"]{background:var(--shell);border-color:var(--shell);color:#fff}
+  .chip[aria-pressed="true"] .dot{box-shadow:0 0 0 2px rgba(255,255,255,.35)}
+
+  .listhead{
+    display:flex;align-items:baseline;justify-content:space-between;
+    padding:12px 14px 6px;flex:0 0 auto;
+  }
+  .listhead h2{margin:0;font-size:12px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .listhead .count{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+
+  ul.poilist{list-style:none;margin:0;padding:0 8px 16px;overflow-y:auto;flex:1 1 auto;min-height:0}
+  ul.poilist li{margin:0}
+  .poi{
+    display:flex;gap:11px;align-items:flex-start;width:100%;
+    padding:10px 9px;border:0;background:transparent;border-radius:10px;
+    text-align:left;cursor:pointer;transition:background .12s;
+  }
+  .poi:hover{background:#f4f8f6}
+  .poi.active{background:#eaf4ef;box-shadow:inset 0 0 0 1px #cfe4da}
+  .poi .badge{
+    width:28px;height:28px;border-radius:9px;flex:0 0 auto;
+    display:grid;place-items:center;color:#fff;font-size:12px;font-weight:800;
+    letter-spacing:.3px;
+  }
+  .poi .txt{min-width:0;flex:1 1 auto}
+  .poi .nm{font-size:13.5px;font-weight:650;line-height:1.25;color:var(--ink);display:block}
+  .poi .meta{font-size:11.5px;color:var(--muted);margin-top:2px;display:block}
+  .poi .dist{font-size:11px;color:var(--green);font-weight:700;margin-top:3px;display:block;font-variant-numeric:tabular-nums}
+  .empty{padding:26px 16px;text-align:center;color:var(--muted);font-size:13px;line-height:1.5}
+
+  /* ---------- map ---------- */
+  .mapwrap{flex:1 1 auto;position:relative;min-width:0;background:#0b1f19;overflow:hidden}
+  #map{position:absolute;inset:0;background:#0b1f19}
+  .leaflet-container{background:#0b1f19;font-family:inherit}
+  .leaflet-control-attribution{font-size:9.5px;background:rgba(255,255,255,.82)!important;color:#3c4a44!important}
+  .leaflet-control-attribution a{color:#1f7a5c!important}
+  .leaflet-bar a{color:var(--ink)!important}
+
+  /* markers */
+  .pin{position:relative;width:30px;height:30px}
+  .pin .b{
+    position:absolute;inset:0;border-radius:50% 50% 50% 4px;
+    transform:rotate(-45deg);
+    border:2px solid #fff;
+    box-shadow:0 3px 8px rgba(0,0,0,.45);
+    display:grid;place-items:center;
+  }
+  .pin .b span{
+    transform:rotate(45deg);
+    color:#fff;font-size:11px;font-weight:800;letter-spacing:.2px;
+    line-height:1;
+  }
+  .pin.sel .b{box-shadow:0 0 0 4px rgba(232,163,61,.55),0 4px 12px rgba(0,0,0,.5)}
+  .pin.dim{opacity:.22;filter:grayscale(.6)}
+  .pin .lbl{
+    position:absolute;left:50%;top:-7px;transform:translate(-50%,-100%);
+    background:rgba(13,31,26,.92);color:#fff;
+    font-size:10.5px;font-weight:600;white-space:nowrap;
+    padding:3px 7px;border-radius:6px;pointer-events:none;
+    opacity:0;transition:opacity .15s;
+  }
+  .pin:hover .lbl,.pin.sel .lbl{opacity:1}
+
+  .you-dot{
+    width:18px;height:18px;border-radius:50%;
+    background:#2f7cf6;border:3px solid #fff;
+    box-shadow:0 0 0 6px rgba(47,124,246,.22),0 2px 6px rgba(0,0,0,.4);
+  }
+
+  /* map overlays */
+  .mapnote{
+    position:absolute;left:12px;bottom:12px;z-index:600;
+    background:rgba(13,31,26,.86);color:#dcece5;
+    padding:7px 11px;border-radius:9px;font-size:11px;line-height:1.4;
+    backdrop-filter:blur(6px);max-width:min(300px,60vw);
+    border:1px solid rgba(255,255,255,.1);
+  }
+  .mapnote b{color:#fff}
+  .compass{
+    position:absolute;right:12px;top:12px;z-index:600;
+    width:44px;height:44px;border-radius:50%;
+    background:rgba(13,31,26,.86);border:1px solid rgba(255,255,255,.14);
+    display:grid;place-items:center;color:#eaf3ef;
+    backdrop-filter:blur(6px);
+  }
+  .compass svg{width:22px;height:22px}
+
+  /* ---------- detail panel ---------- */
+  .panel{
+    position:absolute;top:0;right:0;bottom:0;width:390px;max-width:100%;
+    background:var(--paper);
+    box-shadow:-14px 0 40px rgba(9,32,25,.22);
+    transform:translateX(102%);
+    transition:transform .28s cubic-bezier(.4,0,.2,1);
+    z-index:1100;display:flex;flex-direction:column;
+    border-left:1px solid var(--line);
+  }
+  .panel.open{transform:translateX(0)}
+  .panel-head{
+    padding:16px 18px 14px;border-bottom:1px solid var(--line);
+    display:flex;gap:12px;align-items:flex-start;flex:0 0 auto;
+  }
+  .panel-head .badge{
+    width:38px;height:38px;border-radius:11px;flex:0 0 auto;
+    display:grid;place-items:center;color:#fff;font-size:15px;font-weight:800;
+  }
+  .panel-head .h{flex:1 1 auto;min-width:0}
+  .panel-head h3{margin:0;font-size:17px;line-height:1.25;letter-spacing:-.2px}
+  .panel-head .cat{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);font-weight:700;margin-top:3px}
+  .close{
+    border:0;background:#f1f5f3;color:var(--ink-2);
+    width:30px;height:30px;border-radius:8px;cursor:pointer;
+    display:grid;place-items:center;flex:0 0 auto;
+  }
+  .close:hover{background:#e4ebe7}
+  .close svg{width:15px;height:15px}
+
+  .panel-body{padding:16px 18px 24px;overflow-y:auto;flex:1 1 auto;min-height:0}
+  .desc{font-size:13.5px;line-height:1.6;color:var(--ink-2);margin:0 0 16px}
+
+  .statrow{display:flex;gap:8px;margin-bottom:16px}
+  .stat{
+    flex:1 1 0;background:#f5f9f7;border:1px solid #e3ece8;
+    border-radius:11px;padding:9px 10px;min-width:0;
+  }
+  .stat .k{font-size:9.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);font-weight:700}
+  .stat .v{font-size:15px;font-weight:750;margin-top:2px;font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+  .stat .v small{font-size:10.5px;font-weight:600;color:var(--muted);margin-left:2px}
+
+  .dirbtn{
+    width:100%;display:flex;align-items:center;justify-content:center;gap:8px;
+    background:var(--green);color:#fff;border:0;border-radius:11px;
+    padding:12px;font-size:13.5px;font-weight:700;cursor:pointer;
+    transition:background .15s;
+  }
+  .dirbtn:hover{background:#1a6a50}
+  .dirbtn svg{width:16px;height:16px}
+  .dirbtn.secondary{background:#eef4f1;color:var(--ink);margin-top:8px}
+  .dirbtn.secondary:hover{background:#e2ece7}
+
+  .routebox{
+    margin-top:14px;padding:13px 14px;border-radius:12px;
+    background:#0f2a22;color:#e6f2ec;display:none;
+  }
+  .routebox.show{display:block}
+  .routebox .rt{font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:#8fb3a5;font-weight:700;margin-bottom:6px}
+  .routebox .big{font-size:20px;font-weight:750;letter-spacing:-.3px}
+  .routebox .big small{font-size:12px;font-weight:600;color:#9db8ae;margin-left:4px}
+  .routebox .hint{font-size:12px;line-height:1.5;color:#b9d2c7;margin-top:7px}
+  .routebox .hint b{color:#fff}
+
+  .nearby{margin-top:20px}
+  .nearby h4{font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin:0 0 8px;font-weight:700}
+  .nearby ul{list-style:none;margin:0;padding:0}
+  .nearby li button{
+    width:100%;display:flex;align-items:center;gap:9px;
+    padding:8px 6px;border:0;background:transparent;border-radius:8px;
+    cursor:pointer;text-align:left;font-size:12.5px;color:var(--ink-2);
+  }
+  .nearby li button:hover{background:#f4f8f6}
+  .nearby .d{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
+  .nearby .n{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .nearby .m{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;flex:0 0 auto}
+
+  .tagline{
+    display:inline-flex;align-items:center;gap:5px;
+    font-size:10.5px;color:#8a6a1f;background:#fdf6e7;
+    border:1px solid #f0e2c4;padding:3px 8px;border-radius:999px;
+    font-weight:600;margin-bottom:12px;
+  }
+  .tagline svg{width:11px;height:11px}
+
+  /* toast */
+  .toast{
+    position:absolute;left:50%;bottom:22px;transform:translate(-50%,20px);
+    background:rgba(13,31,26,.95);color:#eaf3ef;
+    padding:11px 16px;border-radius:11px;font-size:12.5px;line-height:1.45;
+    box-shadow:var(--shadow);z-index:1400;max-width:min(420px,88vw);
+    opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;
+    border:1px solid rgba(255,255,255,.12);
+  }
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+
+  /* mobile */
+  .mobilebar{display:none}
+  @media (max-width:860px){
+    header.topbar{padding:9px 12px;gap:9px;flex-wrap:wrap}
+    .brand-text span{display:none}
+    .brand-text b{font-size:14px}
+    .searchwrap{order:3;flex:1 1 100%;max-width:none}
+    .top-actions{margin-left:auto}
+    .btn .btxt{display:none}
+    .btn{padding:9px 10px}
+    aside.sidebar{
+      position:absolute;left:0;right:0;bottom:0;top:auto;
+      width:auto;flex:none;height:auto;max-height:62vh;
+      border-right:0;border-top:1px solid var(--line);
+      border-radius:16px 16px 0 0;
+      box-shadow:0 -10px 30px rgba(9,32,25,.2);
+      transform:translateY(calc(100% - 58px));
+      transition:transform .28s cubic-bezier(.4,0,.2,1);
+      z-index:1000;
+    }
+    aside.sidebar.up{transform:translateY(0)}
+    .mobilebar{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:0 16px;height:58px;flex:0 0 auto;cursor:pointer;
+      border-bottom:1px solid var(--line);
+    }
+    .mobilebar .grab{
+      position:absolute;left:50%;top:7px;transform:translateX(-50%);
+      width:38px;height:4px;border-radius:2px;background:#d3ded8;
+    }
+    .mobilebar b{font-size:13.5px}
+    .mobilebar span{font-size:11.5px;color:var(--muted)}
+    .filters{padding-top:10px}
+    .panel{
+      width:100%;top:auto;bottom:0;height:auto;max-height:78vh;
+      border-radius:16px 16px 0 0;border-left:0;
+      transform:translateY(102%);
+      box-shadow:0 -14px 40px rgba(9,32,25,.28);
+    }
+    .panel.open{transform:translateY(0)}
+    .mapnote{display:none}
+    .compass{width:38px;height:38px;right:10px;top:10px}
+  }
+  @media (max-width:420px){
+    .brand-text b{font-size:13px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{transition:none!important;animation:none!important}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <b>Campus Compass</b>
+        <span>School layout map</span>
+      </div>
+    </div>
+
+    <div class="searchwrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>
+      </svg>
+      <input id="search" type="search" placeholder="Search a building, e.g. library, labs, gate…" autocomplete="off" aria-label="Search campus locations">
+    </div>
+
+    <div class="top-actions">
+      <button class="btn" id="lostBtn" title="Find the nearest landmark to you">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/><path d="M12 8v.01M12 11v5"/>
+        </svg>
+        <span class="btxt">I'm lost</span>
+      </button>
+      <button class="btn primary" id="locBtn" title="Show my position on the map">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+        </svg>
+        <span class="btxt">Where am I?</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="body">
+
+    <aside class="sidebar" id="sidebar">
+      <div class="mobilebar" id="mobilebar" role="button" tabindex="0" aria-label="Toggle location list">
+        <div class="grab" aria-hidden="true"></div>
+        <b>Places on campus</b>
+        <span id="mbCount">13 places</span>
+      </div>
+
+      <div class="notice">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/><path d="M12 8v.01M12 11v5"/>
+        </svg>
+        <div><b>Names are read from the aerial photo.</b> Building positions come from your school's own survey; the labels are our best reading of the roofs. Confirm the official names with the school office.</div>
+      </div>
+
+      <div class="filters">
+        <div class="filters-label">Filter by type</div>
+        <div class="chips" id="chips"></div>
+      </div>
+
+      <div class="listhead">
+        <h2>Places</h2>
+        <span class="count" id="count">13</span>
+      </div>
+      <ul class="poilist" id="poilist"></ul>
+    </aside>
+
+    <div class="mapwrap">
+      <div id="map"></div>
+
+      <div class="compass" aria-hidden="true" title="North is up">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
+          <path d="M12 3l4 9-4-2.2L8 12z" fill="#e8a33d" stroke="#e8a33d"/>
+          <path d="M12 21l-4-9 4 2.2 4-2.2z" fill="none" stroke="#8fb3a5"/>
+        </svg>
+      </div>
+
+      <div class="mapnote">
+        <b>North is up.</b> Tap any pin for details and walking directions.
+      </div>
+
+      <div class="panel" id="panel" role="dialog" aria-modal="false" aria-labelledby="pTitle">
+        <div class="panel-head">
+          <div class="badge" id="pBadge">A</div>
+          <div class="h">
+            <h3 id="pTitle">Place</h3>
+            <div class="cat" id="pCat">Category</div>
+          </div>
+          <button class="close" id="pClose" aria-label="Close details">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+        <div class="panel-body" id="pBody"></div>
+      </div>
+
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </div>
+  </div>
+</div>
+
+<script src="vendor/leaflet.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- data ---------- */
+  var CATS = {
+    gate:     {label:"Entrances",  color:"#b45309", glyph:"G"},
+    admin:    {label:"Admin",      color:"#1d4ed8", glyph:"A"},
+    academic: {label:"Classrooms", color:"#0f766e", glyph:"C"},
+    lab:      {label:"Labs",       color:"#0e7490", glyph:"L"},
+    hall:     {label:"Hall",       color:"#7c2d12", glyph:"H"},
+    sports:   {label:"Sports",     color:"#15803d", glyph:"S"},
+    dining:   {label:"Dining",     color:"#b91c1c", glyph:"D"},
+    parking:  {label:"Parking",    color:"#475569", glyph:"P"},
+    staff:    {label:"Housing",    color:"#a16207", glyph:"Q"},
+    farm:     {label:"Farm",       color:"#4d7c0f", glyph:"F"},
+    utility:  {label:"Utilities",  color:"#64748b", glyph:"W"}
+  };
+
+  var POIS = [
+    {name:"Main Gate & Security Post", cat:"gate", lat:0.482349, lon:35.2656506,
+     desc:"The main entrance off the tarmac road. Start here if you are arriving by vehicle or on foot from the road. Security can point you to any block."},
+    {name:"Vehicle Parking & Drop-off", cat:"parking", lat:0.4807561, lon:35.2666049,
+     desc:"Large open parking area west of the sports field. Visitors and staff park here; it is the closest parking to the oval and the assembly hall."},
+    {name:"Administration & Reception", cat:"admin", lat:0.4827335, lon:35.2681955,
+     desc:"Northern cluster of red-roofed blocks. Go here for admissions, fees, timetables and visitor sign-in."},
+    {name:"Northern Classroom Block", cat:"academic", lat:0.4817997, lon:35.2706608,
+     desc:"Long red-roofed block on the north-east side of campus, beyond the administration cluster."},
+    {name:"East Classroom Block", cat:"academic", lat:0.4811955, lon:35.269786,
+     desc:"Red-roofed teaching block east of the sports field, on the way to the northern classrooms."},
+    {name:"Assembly Hall", cat:"hall", lat:0.4806462, lon:35.2684341,
+     desc:"The large white-roofed building at the north edge of the oval. Morning assembly, prize-giving and school events happen here."},
+    {name:"Sports Oval & Assembly Ground", cat:"sports", lat:0.4803166, lon:35.2684341,
+     desc:"The main oval in the centre of campus. PE lessons, sports fixtures and outdoor gatherings. It is the easiest landmark to orient yourself by."},
+    {name:"Science & Computer Labs", cat:"lab", lat:0.4799871, lon:35.2697065,
+     desc:"Large multi-wing block south-east of the oval. Practicals and computer lessons are held here."},
+    {name:"Dining Hall & Kitchen", cat:"dining", lat:0.479218, lon:35.2699451,
+     desc:"Big grey-roofed hall in the southern part of campus. Meals are served here; the kitchen is attached at the rear."},
+    {name:"Water Tank Compound", cat:"utility", lat:0.480811, lon:35.2702632,
+     desc:"Elevated tanks serving the central campus. A useful landmark between the oval and the labs — if you can see the tanks, you are near the middle of campus."},
+    {name:"Western Staff Quarters", cat:"staff", lat:0.479218, lon:35.2666845,
+     desc:"Residential blocks along the western tree line. Staff housing, not teaching space."},
+    {name:"Agricultural Demonstration Plots", cat:"farm", lat:0.4787237, lon:35.2716152,
+     desc:"Cultivated plots in the south-east corner, used for agriculture practicals. Follow the dirt road east from the dining hall."},
+    {name:"Southern Classroom Cluster", cat:"academic", lat:0.4789983, lon:35.2672412,
+     desc:"Group of long low blocks in the south-west, near the staff quarters and the southern dirt road."}
+  ];
+
+  /* campus boundary from the school's KML survey */
+  var BOUNDARY = [
+    [0.4808542609964839, 35.26528197592352],
+    [0.4780619192238262, 35.27052712179719],
+    [0.4815887285551026, 35.27238326164981],
+    [0.4822535289723681, 35.27102992738628],
+    [0.4816703645461994, 35.26927999185962],
+    [0.4831968476646172, 35.2664845341946]
+  ];
+
+  var IMG_BOUNDS = [[0.4778997320132689, 35.264855325222015],[0.4833927027897026, 35.27280807495117]];
+
+  /* ---------- helpers ---------- */
+  function haversine(a, b){
+    var R = 6371000, toRad = Math.PI/180;
+    var dLat = (b[0]-a[0])*toRad, dLon = (b[1]-a[1])*toRad;
+    var la1 = a[0]*toRad, la2 = b[0]*toRad;
+    var h = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(la1)*Math.cos(la2)*Math.sin(dLon/2)*Math.sin(dLon/2);
+    return 2*R*Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+  function bearing(a, b){
+    var toRad = Math.PI/180, toDeg = 180/Math.PI;
+    var la1 = a[0]*toRad, la2 = b[0]*toRad, dLon = (b[1]-a[1])*toRad;
+    var y = Math.sin(dLon)*Math.cos(la2);
+    var x = Math.cos(la1)*Math.sin(la2) - Math.sin(la1)*Math.cos(la2)*Math.cos(dLon);
+    return (Math.atan2(y,x)*toDeg + 360) % 360;
+  }
+  var DIRS = ["north","north-east","east","south-east","south","south-west","west","north-west"];
+  function compass(deg){ return DIRS[Math.round(deg/45) % 8]; }
+  function fmtDist(m){
+    if (m < 1000) return Math.round(m/5)*5 + " m";
+    return (m/1000).toFixed(1) + " km";
+  }
+  function walkTime(m){
+    var mins = m / 1.25 / 60;           /* ~1.25 m/s walking pace */
+    if (mins < 1) return "<1 min";
+    return Math.round(mins) + " min";
+  }
+  function el(id){ return document.getElementById(id); }
+
+  /* ---------- map ---------- */
+  var map = L.map("map", {
+    zoomControl: true,
+    minZoom: 15,
+    maxZoom: 20,
+    maxBounds: L.latLngBounds(IMG_BOUNDS).pad(0.35),
+    maxBoundsViscosity: 0.8,
+    attributionControl: true
+  });
+
+  L.imageOverlay("images/campus.jpg", IMG_BOUNDS, {
+    attribution: "Aerial imagery: Esri World Imagery &middot; Campus boundary: school KML survey",
+    interactive: false
+  }).addTo(map);
+
+  map.fitBounds(L.latLngBounds(IMG_BOUNDS), {padding:[10,10]});
+
+  /* campus boundary outline */
+  L.polygon(BOUNDARY, {
+    color:"#e8a33d", weight:2.5, opacity:.9, fill:false, dashArray:"7 6", interactive:false
+  }).addTo(map);
+
+  /* ---------- markers ---------- */
+  var markers = {};
+  var selected = null;
+
+  function makeIcon(p, isSel, isDim){
+    var c = CATS[p.cat];
+    var cls = "pin" + (isSel ? " sel" : "") + (isDim ? " dim" : "");
+    return L.divIcon({
+      className: "",
+      html: '<div class="'+cls+'"><div class="b" style="background:'+c.color+'"><span>'+c.glyph+'</span></div>'+
+            '<div class="lbl">'+p.name.replace(/&/g,"&amp;")+'</div></div>',
+      iconSize: [30,30],
+      iconAnchor: [15,30],
+      popupAnchor: [0,-30]
+    });
+  }
+
+  POIS.forEach(function(p, i){
+    p.id = i;
+    p.ll = [p.lat, p.lon];
+    var m = L.marker(p.ll, {icon: makeIcon(p,false,false), title:p.name, riseOnHover:true}).addTo(map);
+    m.on("click", function(){ openPoi(p.id, true); });
+    markers[i] = m;
+  });
+
+  /* ---------- sidebar list ---------- */
+  var activeCats = {};
+  Object.keys(CATS).forEach(function(k){ activeCats[k] = true; });
+
+  var chipsEl = el("chips");
+  Object.keys(CATS).forEach(function(k){
+    var c = CATS[k];
+    var b = document.createElement("button");
+    b.className = "chip";
+    b.type = "button";
+    b.setAttribute("aria-pressed","true");
+    b.dataset.cat = k;
+    b.innerHTML = '<span class="dot" style="background:'+c.color+'"></span>'+c.label;
+    b.addEventListener("click", function(){
+      activeCats[k] = !activeCats[k];
+      b.setAttribute("aria-pressed", activeCats[k] ? "true" : "false");
+      renderList();
+    });
+    chipsEl.appendChild(b);
+  });
+
+  var listEl = el("poilist");
+  var query = "";
+
+  function visible(p){
+    if (!activeCats[p.cat]) return false;
+    if (!query) return true;
+    var hay = (p.name + " " + CATS[p.cat].label + " " + p.desc).toLowerCase();
+    return hay.indexOf(query) !== -1;
+  }
+
+  function renderList(){
+    var shown = POIS.filter(visible);
+    listEl.innerHTML = "";
+    if (!shown.length){
+      listEl.innerHTML = '<li class="empty">No place matches that search.<br>Try “gate”, “labs” or “dining”.</li>';
+    }
+    shown.forEach(function(p){
+      var c = CATS[p.cat];
+      var li = document.createElement("li");
+      var btn = document.createElement("button");
+      btn.className = "poi" + (selected === p.id ? " active" : "");
+      btn.type = "button";
+      var d = haversine(POIS[0].ll, p.ll);
+      btn.innerHTML =
+        '<span class="badge" style="background:'+c.color+'">'+c.glyph+'</span>'+
+        '<span class="txt"><span class="nm">'+p.name.replace(/&/g,"&amp;")+'</span>'+
+        '<span class="meta">'+c.label+'</span>'+
+        '<span class="dist">'+fmtDist(d)+' from the main gate</span></span>';
+      btn.addEventListener("click", function(){ openPoi(p.id, true); });
+      li.appendChild(btn);
+      listEl.appendChild(li);
+    });
+    el("count").textContent = shown.length;
+    el("mbCount").textContent = shown.length + (shown.length === 1 ? " place" : " places");
+
+    /* dim markers that are filtered out */
+    POIS.forEach(function(p){
+      var m = markers[p.id];
+      var on = visible(p);
+      m.setIcon(makeIcon(p, selected === p.id, !on));
+      if (on) { m.setOpacity(1); } else { m.setOpacity(0.35); }
+    });
+  }
+
+  /* ---------- search ---------- */
+  var searchEl = el("search");
+  searchEl.addEventListener("input", function(){
+    query = searchEl.value.trim().toLowerCase();
+    renderList();
+  });
+  document.addEventListener("keydown", function(e){
+    if (e.key === "/" && document.activeElement !== searchEl){
+      e.preventDefault(); searchEl.focus();
+    }
+    if (e.key === "Escape"){ closePanel(); }
+  });
+
+  /* ---------- detail panel ---------- */
+  var panel = el("panel");
+  var pBody = el("pBody");
+  var routeLine = null;
+  var youMarker = null;
+  var youLatLng = null;
+
+  function openPoi(id, fly){
+    var p = POIS[id];
+    selected = id;
+    var c = CATS[p.cat];
+
+    el("pBadge").textContent = c.glyph;
+    el("pBadge").style.background = c.color;
+    el("pTitle").textContent = p.name;
+    el("pCat").textContent = c.label;
+
+    var fromGate = haversine(POIS[0].ll, p.ll);
+    var fromYou = youLatLng ? haversine(youLatLng, p.ll) : null;
+
+    var html = "";
+    html += '<div class="tagline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v.01M12 11v5"/></svg>Position read from the aerial survey</div>';
+    html += '<p class="desc">'+p.desc+'</p>';
+
+    html += '<div class="statrow">';
+    html += '<div class="stat"><div class="k">From main gate</div><div class="v">'+fmtDist(fromGate)+'</div></div>';
+    html += '<div class="stat"><div class="k">Walk</div><div class="v">'+walkTime(fromGate)+'</div></div>';
+    if (fromYou !== null){
+      html += '<div class="stat"><div class="k">From you</div><div class="v">'+fmtDist(fromYou)+'</div></div>';
+    }
+    html += '</div>';
+
+    html += '<button class="dirbtn" id="dirBtn">'+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-8-8 18-2-8-8-2z"/></svg>'+
+      (youLatLng ? 'Directions from my position' : 'Directions from the main gate')+'</button>';
+
+    html += '<div class="routebox" id="routebox"></div>';
+
+    /* nearby */
+    var near = POIS.filter(function(o){ return o.id !== p.id; })
+      .map(function(o){ return {o:o, d:haversine(p.ll, o.ll)}; })
+      .sort(function(a,b){ return a.d - b.d; })
+      .slice(0,3);
+    html += '<div class="nearby"><h4>Closest landmarks</h4><ul>';
+    near.forEach(function(n){
+      html += '<li><button data-goto="'+n.o.id+'">'+
+        '<span class="d" style="background:'+CATS[n.o.cat].color+'"></span>'+
+        '<span class="n">'+n.o.name.replace(/&/g,"&amp;")+'</span>'+
+        '<span class="m">'+fmtDist(n.d)+'</span></button></li>';
+    });
+    html += '</ul></div>';
+
+    pBody.innerHTML = html;
+    panel.classList.add("open");
+
+    pBody.querySelectorAll("[data-goto]").forEach(function(b){
+      b.addEventListener("click", function(){ openPoi(parseInt(b.dataset.goto,10), true); });
+    });
+    el("dirBtn").addEventListener("click", function(){ showRoute(p); });
+
+    renderList();
+
+    if (fly){
+      map.flyTo(p.ll, Math.max(map.getZoom(), 18), {duration:0.7});
+    }
+  }
+
+  function closePanel(){
+    panel.classList.remove("open");
+    selected = null;
+    if (routeLine){ map.removeLayer(routeLine); routeLine = null; }
+    renderList();
+  }
+  el("pClose").addEventListener("click", closePanel);
+
+  /* ---------- directions ---------- */
+  function showRoute(p){
+    var origin = youLatLng || POIS[0].ll;
+    var originName = youLatLng ? "your position" : "the main gate";
+    var d = haversine(origin, p.ll);
+    var brg = bearing(origin, p.ll);
+
+    if (routeLine) map.removeLayer(routeLine);
+    routeLine = L.polyline([origin, p.ll], {
+      color:"#e8a33d", weight:4, opacity:.95, dashArray:"9 8", lineCap:"round"
+    }).addTo(map);
+    map.fitBounds(routeLine.getBounds(), {padding:[50,50]});
+
+    var box = el("routebox");
+    box.classList.add("show");
+    box.innerHTML =
+      '<div class="rt">Straight-line route</div>'+
+      '<div class="big">'+fmtDist(d)+' <small>· about '+walkTime(d)+' on foot</small></div>'+
+      '<div class="hint">Head <b>'+compass(brg)+'</b> from '+originName+'. '+
+      'This is a direct line, not a footpath — follow the campus roads and tracks, and ask at the gate if a fence is in the way.</div>';
+  }
+
+  /* ---------- geolocation ---------- */
+  function locate(cb){
+    if (!navigator.geolocation){
+      toast("This browser cannot share your location. Use the map and the gate as your starting point.");
+      return;
+    }
+    toast("Finding your position…");
+    navigator.geolocation.getCurrentPosition(function(pos){
+      var ll = [pos.coords.latitude, pos.coords.longitude];
+      youLatLng = ll;
+
+      if (youMarker) map.removeLayer(youMarker);
+      youMarker = L.marker(ll, {
+        icon: L.divIcon({className:"", html:'<div class="you-dot"></div>', iconSize:[18,18], iconAnchor:[9,9]}),
+        zIndexOffset: 1000, interactive:false
+      }).addTo(map);
+
+      var acc = pos.coords.accuracy || 0;
+      L.circle(ll, {radius: Math.max(acc, 8), color:"#2f7cf6", weight:1, opacity:.5, fillColor:"#2f7cf6", fillOpacity:.12, interactive:false}).addTo(map);
+
+      var inside = L.latLngBounds(IMG_BOUNDS).contains(L.latLng(ll));
+      map.flyTo(ll, 18, {duration:0.8});
+
+      if (!inside){
+        toast("You are outside the mapped campus area — the map only covers the school grounds. Showing your position anyway.");
+      } else {
+        var nearest = POIS.map(function(p){ return {p:p, d:haversine(ll, p.ll)}; })
+          .sort(function(a,b){ return a.d - b.d; })[0];
+        toast("You are about "+fmtDist(nearest.d)+" from "+nearest.p.name+".");
+      }
+      if (cb) cb(ll);
+    }, function(err){
+      var msg = "Location was blocked. Allow location access in your browser, or start from the main gate.";
+      if (err && err.code === 1) msg = "Location permission was denied. Allow it in your browser settings, or start from the main gate.";
+      if (err && err.code === 3) msg = "Location timed out. Try again outdoors, or start from the main gate.";
+      toast(msg);
+    }, {enableHighAccuracy:true, timeout:12000, maximumAge:30000});
+  }
+
+  el("locBtn").addEventListener("click", function(){ locate(); });
+
+  /* ---------- I'm lost ---------- */
+  el("lostBtn").addEventListener("click", function(){
+    locate(function(ll){
+      var near = POIS.map(function(p){ return {p:p, d:haversine(ll, p.ll), b:bearing(ll, p.ll)}; })
+        .sort(function(a,b){ return a.d - b.d; })
+        .slice(0,3);
+
+      el("pBadge").textContent = "?";
+      el("pBadge").style.background = "#2f7cf6";
+      el("pTitle").textContent = "You are here";
+      el("pCat").textContent = "Nearest landmarks";
+
+      var html = '<p class="desc">You are inside the campus area. These three places are closest to you — walk to the nearest one and you will be back on a known path.</p>';
+      html += '<div class="nearby" style="margin-top:0"><ul>';
+      near.forEach(function(n){
+        html += '<li><button data-goto="'+n.p.id+'">'+
+          '<span class="d" style="background:'+CATS[n.p.cat].color+'"></span>'+
+          '<span class="n">'+n.p.name.replace(/&/g,"&amp;")+'</span>'+
+          '<span class="m">'+fmtDist(n.d)+' · '+compass(n.b)+'</span></button></li>';
+      });
+      html += '</ul></div>';
+      html += '<button class="dirbtn secondary" id="lostGate" style="margin-top:16px">Take me to the main gate instead</button>';
+
+      pBody.innerHTML = html;
+      panel.classList.add("open");
+      pBody.querySelectorAll("[data-goto]").forEach(function(b){
+        b.addEventListener("click", function(){ openPoi(parseInt(b.dataset.goto,10), true); });
+      });
+      el("lostGate").addEventListener("click", function(){ openPoi(0, true); });
+    });
+  });
+
+  /* ---------- toast ---------- */
+  var toastTimer = null;
+  function toast(msg){
+    var t = el("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove("show"); }, 5200);
+  }
+
+  /* ---------- mobile sheet ---------- */
+  var sidebar = el("sidebar");
+  var mbar = el("mobilebar");
+  function toggleSheet(){
+    sidebar.classList.toggle("up");
+  }
+  mbar.addEventListener("click", toggleSheet);
+  mbar.addEventListener("keydown", function(e){
+    if (e.key === "Enter" || e.key === " "){ e.preventDefault(); toggleSheet(); }
+  });
+
+  /* ---------- init ---------- */
+  renderList();
+
+  /* restore last viewed place (this browser only) */
+  try {
+    var last = localStorage.getItem("campuscompass:last");
+    if (last !== null && POIS[parseInt(last,10)]) {
+      /* highlight only — do not steal the view on load */
+      selected = parseInt(last,10);
+      renderList();
+      selected = null;
+    }
+  } catch(e){}
+
+  map.on("click", function(){ /* keep panel open; map click just deselects route */ });
+})();
+</script>
+</body>
+</html>
